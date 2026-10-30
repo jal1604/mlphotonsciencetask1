@@ -1,3 +1,6 @@
+import csv
+import os
+
 import numpy as np
 from sklearn.mixture import GaussianMixture
 
@@ -122,7 +125,32 @@ def extract_features(spots, width, height):
             np.log1p(max(s["integrated_intensity"], 0)),
             np.sin(2 * angle),
             np.cos(2 * angle),
-            s["eccentricity"]
+            #s["eccentricity"]
         ])
 
     return np.asarray(features, dtype=np.float32)
+
+def save_gmm_results(
+    accumulated_file_path,
+    file_name,
+    hex_x,
+    hex_z,
+    features
+):
+    file_exists = (
+        os.path.exists(accumulated_file_path)
+        and os.path.getsize(accumulated_file_path) > 0
+    )
+
+    with open(accumulated_file_path, "a", newline="") as f:
+        writer = csv.writer(f)
+
+        # Feature names become column headers
+        if not file_exists:
+            header = ["filename", "hex_x", "hex_z", "center_x", "center_y", "sigma_major", "sigma_minor", "integrated_intensity", "orientation_sin", "orientation_cos"]
+            writer.writerow(header)
+
+
+        # Feature values are written into a single row
+        row = [file_name, hex_x, hex_z] + list(features)
+        writer.writerow(row)
