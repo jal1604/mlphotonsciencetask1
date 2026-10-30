@@ -7,259 +7,110 @@ from matplotlib.patches import Ellipse
 from scipy.special import logsumexp
 from sklearn.cluster import KMeans
 from sklearn.mixture import GaussianMixture
+import re
 
 
-def find_gmm_clusters(
-    image,
-    N=32,
-    threshold_percentile=99,
-    intensity_power=1.0,
-    random_state=42
-):
-
-    image = np.asarray(image, dtype=float)
-
-    # Select high-intensity pixels
-    valid = np.isfinite(image)
-
-    threshold = np.percentile(
-        image[valid], threshold_percentile
-    )
-
-    mask = valid & (image > threshold)
-
-    y, x = np.where(mask)
-    intensities = image[y, x]
-
-    if len(x) < N:
-        raise ValueError("Not enough pixels.")
-
-    # Spatial coordinates only
-    X = np.column_stack([x, y])
-
-    # Fit standard GMM
-    gmm = GaussianMixture(
-        n_components=N,
-        covariance_type="full",
-        n_init=5,
-        max_iter=300,
-        reg_covar=1e-3,
-        init_params="random_from_data",
-        random_state=random_state
-    )
-
-    gmm.fit(X)
-
-    # Membership probabilities
-    probabilities = gmm.predict_proba(X)
-
-    labels = np.argmax(probabilities, axis=1)
-
-    # Extract fitted parameters
-    spots = []
-
-    for k in range(N):
-
-        mean = gmm.means_[k]
-        cov = gmm.covariances_[k]
-
-        # Apply intensity weighting to reported measurements
-        weights = probabilities[:, k] * (
-            np.maximum(intensities - threshold, 0)
-            ** intensity_power
-        )
-
-        if weights.sum() == 0:
-            weights = probabilities[:, k]
-
-        # Intensity-weighted center
-        center = np.average(X, axis=0, weights=weights)
-
-        # Eigen decomposition
-        eigvals, eigvecs = np.linalg.eigh(cov)
-
-        order = np.argsort(eigvals)[::-1]
-
-        eigvals = eigvals[order]
-        eigvecs = eigvecs[:, order]
-
-        sigma_major = np.sqrt(eigvals[0])
-        sigma_minor = np.sqrt(eigvals[1])
-
-        angle = np.degrees(
-            np.arctan2(
-                eigvecs[1, 0],
-                eigvecs[0, 0]
-            )
-        )
-
-        spots.append({
-            "center_x": center[0],
-            "center_y": center[1],
-            "gmm_center_x": mean[0],
-            "gmm_center_y": mean[1],
-            "covariance": cov,
-            "sigma_major": sigma_major,
-            "sigma_minor": sigma_minor,
-            "fwhm_major": 2.35482 * sigma_major,
-            "fwhm_minor": 2.35482 * sigma_minor,
-            "orientation_deg": angle,
-            "integrated_intensity": np.sum(weights),
-            "mixture_weight": gmm.weights_[k]
-        })
-
-    return {
-        "spots": spots,
-        "centers": gmm.means_,
-        "covariances": gmm.covariances_,
-        "labels": labels,
-        "probabilities": probabilities,
-        "coordinates": X,
-        "gmm": gmm,
-        "threshold": threshold
-    }
-
-
-def find_intensity_clusters(
-    image,
-    N=10,
-    threshold_percentile=99,
-    spatial_weight=1.0,
-    intensity_weight=2.0,
-    random_state=42
-):
-    """
-    Find N spatially distinct, high-intensity clusters in a 2D image.
-
-    Parameters
-    ----------
-    image : np.ndarray
-        2D intensity image.
-    N : int
-        Number of clusters.
-    threshold_percentile : float
-        Ignore pixels below this intensity percentile.
-    spatial_weight : float
-        Weight of spatial coordinates in clustering.
-    intensity_weight : float
-        Weight of intensity in clustering.
-    random_state : int
-        Random seed.
-
-    Returns
-    -------
-    centers : np.ndarray
-        Cluster centers (y, x).
-    labels : np.ndarray
-        Image-sized array with cluster labels (-1 = background).
-    """
+def find_gmm_clusters(image, N=32, threshold_percentile=99,
+                      intensity_power=1.0, random_state=42):
 
     image = np.asarray(image, dtype=float)
 
     if image.ndim != 2:
         raise ValueError("Image must be 2D.")
 
-    # Ignore invalid pixels
     valid = np.isfinite(image)
+    if not valid.any():
+        raise ValueError("Image contains no finite pixels.")
 
-    # Threshold high intensity pixels
+    height, width = image.shape
     threshold = np.percentile(image[valid], threshold_percentile)
-    mask = valid & (image >= threshold)
 
-    y, x = np.where(mask)
+    y, x = np.where(valid & (image > threshold))
+    X = np.column_stack((x, y))
     intensities = image[y, x]
 
-    if len(x) < N:
-        raise ValueError("Not enough pixels above threshold for N clusters.")
+    if len(X) < N:
+        raise ValueError("Not enough pixels for N clusters.")
 
-    # Normalize coordinates
-    x_norm = (x - x.mean()) / (x.std() + 1e-10)
-    y_norm = (y - y.mean()) / (y.std() + 1e-10)
-
-    # Normalize intensity
-    i_norm = (intensities - intensities.min()) / (
-        intensities.max() - intensities.min() + 1e-10
-    )
-
-    # Feature space: spatial position + intensity
-    features = np.column_stack([
-        spatial_weight * x_norm,
-        spatial_weight * y_norm,
-        intensity_weight * i_norm
-    ])
-
-    # K-means
-    kmeans = KMeans(
-        n_clusters=N,
-        n_init=20,
+    gmm = GaussianMixture(
+        n_components=N, covariance_type="full",
+        n_init=5, max_iter=300, reg_covar=1e-3,
         random_state=random_state
-    )
+    ).fit(X)
 
-    cluster_labels = kmeans.fit_predict(features)
+    probabilities = gmm.predict_proba(X)
+    labels = probabilities.argmax(axis=1)
+    excess = np.maximum(intensities - threshold, 0)
 
-    # Create full-size label image
-    label_image = np.full(image.shape, -1, dtype=int)
-    label_image[y, x] = cluster_labels
+    spots = []
 
-    # Calculate actual spatial centers
-    centers = np.array([
-        [y[cluster_labels == i].mean(),
-         x[cluster_labels == i].mean()]
-        for i in range(N)
-    ])
+    for k in range(N):
+        weights = probabilities[:, k] * excess**intensity_power
+        if weights.sum() <= 1e-12:
+            weights = probabilities[:, k]
 
-    return centers, label_image
+        center = np.average(X, axis=0, weights=weights)
+        cov = gmm.covariances_[k]
 
+        eigvals, eigvecs = np.linalg.eigh(cov)
+        order = np.argsort(eigvals)[::-1]
+        eigvals, eigvecs = eigvals[order], eigvecs[:, order]
 
+        major, minor = np.sqrt(eigvals)
+        angle = np.degrees(np.arctan2(eigvecs[1, 0], eigvecs[0, 0]))
 
-def plot_clusters(image, centers, labels, sw, iv):
+        eccentricity = np.sqrt(max(0, 1 - eigvals[1] / (eigvals[0] + 1e-10)))
+        intensity = np.sum(probabilities[:, k] * excess)
 
-    fig, ax = plt.subplots(figsize=(10, 8))
+        spots.append({
+            "center_x": center[0],
+            "center_y": center[1],
+            "gmm_center_x": gmm.means_[k, 0],
+            "gmm_center_y": gmm.means_[k, 1],
+            "covariance": cov,
+            "sigma_major": major,
+            "sigma_minor": minor,
+            "fwhm_major": 2.35482 * major,
+            "fwhm_minor": 2.35482 * minor,
+            "orientation_deg": angle,
+            "integrated_intensity": intensity,
+            "mixture_weight": gmm.weights_[k],
+            "eccentricity": eccentricity
+        })
 
-    # Original image
-    ax.imshow(image,
-              cmap="viridis",
-              #norm="log"
-              )
+    cx, cy = width / 2, height / 2
 
-    N = len(centers)
+    spots.sort(key=lambda s: np.arctan2(
+        s["center_y"] - cy, s["center_x"] - cx
+    ))
 
-    # Calculate mean cluster intensities
-    intensities = np.array([
-        np.mean(image[labels == i])
-        for i in range(N)
-    ])
+    features = []
 
-    # Scale circle sizes
-    min_size = 50
-    max_size = 1200
+    for s in spots:
+        angle = np.radians(s["orientation_deg"])
 
-    normalized = (
-        (intensities - intensities.min()) /
-        (intensities.max() - intensities.min() + 1e-10)
-    )
+        features.extend([
+            (s["center_x"] - cx) / cx,
+            (s["center_y"] - cy) / cy,
+            s["sigma_major"] / width,
+            s["sigma_minor"] / height,
+            np.log1p(max(s["integrated_intensity"], 0)),
+            np.sin(2 * angle),
+            np.cos(2 * angle),
+            s["eccentricity"]
+        ])
 
-    sizes = min_size + normalized * (max_size - min_size)
-
-    # Plot filled circles
-    for i, (cy, cx) in enumerate(centers):
-
-        ax.scatter(
-            cx,
-            cy,
-            s=sizes[i],
-            color="red",
-            alpha=0.35,
-            edgecolors="red",
-            linewidths=1.5
-        )
-
-    ax.set_title(f"Diffraction clusters {sw} , {iv} (circle size = mean intensity)")
-    ax.set_xlabel("X (pixels)")
-    ax.set_ylabel("Y (pixels)")
-
-    plt.tight_layout()
-    plt.show()
+    return {
+        "spots": spots,
+        "features": np.array(features, dtype=np.float32),
+        "centers": gmm.means_,
+        "covariances": gmm.covariances_,
+        "labels": labels,
+        "probabilities": probabilities,
+        "coordinates": X,
+        "threshold": threshold,
+        "gmm": gmm
+    }
 
 
 def plot_gmm_results(image, results):
@@ -269,11 +120,7 @@ def plot_gmm_results(image, results):
     # Log-normalized original image
     log_image = np.log1p(np.maximum(image, 0))
 
-    ax.imshow(
-        log_image,
-        cmap="viridis",
-        origin="upper"
-    )
+    ax.imshow(log_image,cmap="viridis",origin="upper")
 
     for i, spot in enumerate(results["spots"]):
 
@@ -281,41 +128,15 @@ def plot_gmm_results(image, results):
         cy = spot["center_y"]
 
         # Fitted Gaussian ellipse (2 sigma)
-        ellipse = Ellipse(
-            xy=(cx, cy),
-            width=4 * spot["sigma_major"],
-            height=4 * spot["sigma_minor"],
-            angle=spot["orientation_deg"],
-            facecolor="red",
-            edgecolor="white",
-            alpha=0.30,
-            linewidth=1.8,
-            zorder=3
-        )
+        ellipse = Ellipse(xy=(cx, cy),width=4 * spot["sigma_major"],height=4 * spot["sigma_minor"],angle=spot["orientation_deg"],facecolor="red",edgecolor="white",alpha=0.30,linewidth=1.8,zorder=3)
 
         ax.add_patch(ellipse)
 
         # Center
-        ax.scatter(
-            cx, cy,
-            color="white",
-            marker="+",
-            s=80,
-            linewidths=2,
-            zorder=4
-        )
+        ax.scatter(cx, cy,color="white",marker="+",s=80,linewidths=2,zorder=4)
 
         # Intensity annotation
-        ax.annotate(
-            f"{spot['integrated_intensity']:.0f}",
-            (cx, cy),
-            xytext=(8, 8),
-            textcoords="offset points",
-            color="yellow",
-            fontsize=9,
-            fontweight="bold",
-            zorder=5
-        )
+        ax.annotate(f"{spot['integrated_intensity']:.0f}",(cx, cy),xytext=(8, 8),textcoords="offset points",color="yellow",fontsize=9,fontweight="bold",zorder=5)
 
     ax.set_title("Diffraction spots - GMM covariance ellipses")
     ax.set_xlabel("X (pixels)")
@@ -369,41 +190,24 @@ def main():
 
                 results = find_gmm_clusters(
                     data,
-                    N=8,
+                    N=6,
                     threshold_percentile=97,
                     intensity_power=1.0
                 )
 
-
-                plot_gmm_results(data, results)
-
-                # print(type(data))  # <class 'numpy.ndarray'>
-                # print(data.shape)  # Image dimensions
-                # print(data.ndim)
-                # print(data.dtype)  # Data type
-                #
-                # plt.imshow(data, cmap="viridis", norm="log")
-                # plt.colorbar(label="Intensity")
-                # plt.show()
-                #
-                # print(img.header)
-
-                break
+                #plot_gmm_results(data, results)
 
                 with archive.open(logfile, "r") as logfile_in_zip:
                     for line in logfile_in_zip.readlines():
-                        print(line)
+                        line = line.decode("utf-8").strip()
                         if not any([x in line for x in ["hexapod x", "hexapod z"]]):
                             continue
                         print(line)
 
-                if i > 1:
-                    break
 
-                i += 1
-
-                # Open the master accumulated file in write/append mode
-             #   with open(accumulated_file_path, "w", encoding="utf-8") as output_file:
+            i += 1
+            if i > 1:
+                break
 
 
 
