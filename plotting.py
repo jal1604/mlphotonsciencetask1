@@ -7,6 +7,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 
+import numpy as np
+import matplotlib.pyplot as plt
+
 
 def plot_gmm_results(image, results):
 
@@ -16,7 +19,7 @@ def plot_gmm_results(image, results):
 
     ax.imshow(
         log_image,
-        cmap="grey",
+        cmap= "viridis", #"grey",
         origin="upper"
     )
 
@@ -50,12 +53,12 @@ def plot_gmm_results(image, results):
 
         ellipse = Ellipse(
             xy=(cx, cy),
-            width=spot["sigma_major"],
-            height=spot["sigma_minor"],
+            width=spot["sigma_major"] * 4,
+            height=spot["sigma_minor"] * 4,
             angle=spot["orientation_deg"],
             facecolor="red",
             edgecolor="white",
-            alpha=alpha,
+            alpha=alpha * 0.5,
             linewidth=1.8,
             zorder=3
         )
@@ -88,9 +91,6 @@ def plot_gmm_results(image, results):
 
     plt.tight_layout()
     plt.show()
-
-import numpy as np
-import matplotlib.pyplot as plt
 
 
 def plot_intensity_distribution(

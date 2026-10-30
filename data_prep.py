@@ -18,7 +18,7 @@ from plotting import plot_gmm_results, plot_intensity_distribution
 def main():
 
     zip_file_path = "Mainz_2022-10_AXO-Optics-Scan-forML.zip"
-    accumulated_file_path = "combined_output.txt"
+    accumulated_file_path = "data2.csv"
 
     # Open the ZIP archive
     with zipfile.ZipFile(zip_file_path, "r") as archive:
@@ -59,13 +59,13 @@ def main():
 
                 results = find_gmm_clusters(
                     data,
-                    N=8,
-                    threshold_percentile=80,
-                    intensity_power=20.0
+                    N=16,
+                    threshold_percentile=99,
+                    intensity_power=1.0
                 )
 
-                plot_gmm_results(data, results)
-                plot_intensity_distribution(data)
+                #plot_gmm_results(data, results)
+                #plot_intensity_distribution(data)
 
                 hex_x = 0
                 hex_z = 0
@@ -83,14 +83,14 @@ def main():
                 # Accumulate results["features"] and the hex_x and hex_z into a single file
                 save_gmm_results(
                     accumulated_file_path,
-                    file_name,
+                    file_name.split("/")[-1],
                     hex_x,
                     hex_z,
                     results["features"]
                 )
 
             i += 1
-            if i > 1:
+            if i > 1000:
                 break
 
 
