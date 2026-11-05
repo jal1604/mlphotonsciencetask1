@@ -67,6 +67,7 @@ def main():
                 #plot_gmm_results(data, results)
                 #plot_intensity_distribution(data)
 
+
                 hex_x = 0
                 hex_z = 0
 

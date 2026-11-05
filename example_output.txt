@@ -1,0 +1,32 @@
+Epoch 20: train=0.135469, val=0.125266
+Epoch 40: train=0.091177, val=0.093162
+Epoch 60: train=0.074948, val=0.076875
+Epoch 80: train=0.067131, val=0.072857
+Epoch 100: train=0.059313, val=0.072612
+Epoch 120: train=0.054095, val=0.063486
+Epoch 140: train=0.050657, val=0.061932
+Epoch 160: train=0.046209, val=0.056813
+Epoch 180: train=0.048377, val=0.058455
+Epoch 200: train=0.044245, val=0.069094
+Epoch 220: train=0.040833, val=0.055877
+Epoch 240: train=0.042256, val=0.054118
+Epoch 260: train=0.036802, val=0.055007
+Epoch 280: train=0.035390, val=0.053373
+Epoch 300: train=0.033890, val=0.054595
+Epoch 320: train=0.037272, val=0.053446
+Epoch 340: train=0.032159, val=0.057747
+Epoch 360: train=0.030870, val=0.054615
+Epoch 380: train=0.029210, val=0.047312
+Epoch 400: train=0.035452, val=0.062711
+Epoch 420: train=0.028244, val=0.052513
+Epoch 440: train=0.027532, val=0.052971
+Epoch 460: train=0.027388, val=0.049213
+Epoch 480: train=0.026772, val=0.049555
+Epoch 500: train=0.028197, val=0.052270
+
+Best epoch: 466
+Best validation MSE (scaled): 0.044974
+Test MSE (original scale): 0.019054
+Test RMSE (original scale): 0.138038
+hex_x test MSE: 0.011562
+hex_z test MSE: 0.026547
